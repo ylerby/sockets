@@ -1,0 +1,3 @@
+ошибка при получении сообщения - read tcp 127.0.0.1:8080->127.0.0.1:63124: use of closed network connection
+ошибка при получении сообщения - read tcp 127.0.0.1:8080->127.0.0.1:63125: use of closed network connection
+ошибка при получении сообщения - read tcp 127.0.0.1:8080->127.0.0.1:63126: use of closed network connection

@@ -1,0 +1,7 @@
+{
+  "address" : "localhost",
+  "port" : "8080",
+  "log_file_name" : "log_file.log",
+  "error_log_file_name" : "error_log_file.log",
+  "timeout" : 3
+}
