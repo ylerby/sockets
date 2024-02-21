@@ -13,13 +13,16 @@ import (
 )
 
 const (
-	LogFileName      = "log_file.txt"
-	ErrorLogFileName = "error_log_file.txt"
-	ConfigFileName   = "config.json"
-	BufferSize       = 256
-	ServerProtocol   = "tcp"
-	ServerWriter     = "Алиякбяров М.А."
-	FullNameSize     = 3
+	LogFileName        = "log_file.txt"
+	ErrorLogFileName   = "error_log_file.txt"
+	ConfigFileName     = "config.json"
+	ServerProtocol     = "tcp"
+	ServerWriter       = "Сервер написан - Алиякбяров М.А."
+	InvalidDataMessage = "некорректные данные"
+	BufferSize         = 256
+	FullNameSize       = 3
+	MaxMessageSize     = 5
+	MinMessageSize     = 3
 )
 
 type Application struct {
@@ -42,8 +45,9 @@ type Config struct {
 func (a *Application) handleConnection(conn net.Conn, timeout int) {
 	defer func(conn net.Conn) {
 		err := conn.Close()
+		a.logger.Printf("%s - клиент отключен\n", time.Now())
 		if err != nil {
-			a.errorLogger.Fatalf("ошибка при закрытии соединения с клиентом - %s", err)
+			a.errorLogger.Fatalf("ошибка при закрытии соединения с клиентом - %s\n", err)
 		}
 	}(conn)
 
@@ -57,6 +61,16 @@ func (a *Application) handleConnection(conn net.Conn, timeout int) {
 	}
 
 	a.logger.Printf("%s - получено сообщение от клиента - %s", time.Now(), string(buffer[:n]))
+
+	bufferSlice := strings.Split(string(buffer), " ")
+	if len(bufferSlice) > MaxMessageSize || len(bufferSlice) < MinMessageSize {
+		_, err = conn.Write([]byte(InvalidDataMessage))
+		a.logger.Printf("%s - отправлено сообщение клиенту - %s\n", time.Now(), InvalidDataMessage)
+		if err != nil {
+			a.errorLogger.Fatalf("ошибка при ответе - %s\n", err)
+		}
+		return
+	}
 
 	time.Sleep(time.Second * time.Duration(timeout))
 
