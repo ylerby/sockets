@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
+	"server/logger"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -88,12 +88,12 @@ func main() {
 	var err error
 
 	app := NewApplication()
-	app.logger, err = app.InitLogger(LogFileName)
+	app.logger, err = logger.InitLogger(LogFileName)
 	if err != nil {
 		log.Fatalf("ошибка при инициализации логгера - %s\n", err)
 	}
 
-	app.errorLogger, err = app.InitLogger(ErrorLogFileName)
+	app.errorLogger, err = logger.InitLogger(ErrorLogFileName)
 	if err != nil {
 		log.Fatalf("ошибка при инициализации логгера - %s\n", err)
 	}
@@ -127,38 +127,8 @@ func main() {
 
 		app.logger.Printf("%s - клиент подключен", time.Now())
 
-		cwd, err := os.Getwd()
-		if err != nil {
-			app.errorLogger.Fatalf("ошибка при получении текущей директории - %s\n", err)
-			return
-		}
-
-		go func() {
-			cmd := exec.Command("cd /", fmt.Sprintf("cd%s", cwd), " && ", "go", "run", "handleConnection.go")
-			cmd.Stdin = connection
-			cmd.Stdout = connection
-			cmd.Stderr = connection
-
-			err = cmd.Run()
-			if err != nil {
-				app.errorLogger.Fatalf("ошибка при запуске процесса - %s\n", err)
-			}
-
-			app.handleConnection(connection, config.Timeout)
-		}()
+		app.handleConnection(connection, config.Timeout)
 	}
-}
-
-func (a *Application) InitLogger(fileName string) (*log.Logger, error) {
-	logFile, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка при открытии/создании файла - %s\n", err)
-	}
-
-	logger := &log.Logger{}
-	logger.SetOutput(logFile)
-
-	return logger, nil
 }
 
 func (a *Application) InitConfig() (*Config, error) {
