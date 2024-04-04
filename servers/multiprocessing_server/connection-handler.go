@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"multiprocessing_server/logger"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -16,51 +19,74 @@ const (
 	MaxMessageSize     = 5
 	MinMessageSize     = 3
 	ServerWriter       = "Сервер написан - Алиякбяров М.А."
-	BufferSize         = 256
 )
 
+type Subservice struct {
+	l   *log.Logger
+	el  *log.Logger
+	cfg *Subconfig
+}
+
+type Subconfig struct {
+	Address          string `json:"address"`
+	Port             string `json:"port"`
+	LogFileName      string `json:"log_file_name"`
+	ErrorLogFileName string `json:"error_log_file_name"`
+	Timeout          int    `json:"timeout"`
+}
+
 func main() {
-	l, err := logger.InitLogger("logs/log_file.txt")
+	cfgfilename := "config/config.json"
+	logfilepath := "logs/log_file.txt"
+	flag.Parse()
+
+	subservice := new(Subservice)
+
+	cfg, err := subservice.InitConfig(cfgfilename)
 	if err != nil {
-		log.Fatalf("failed to initialize application logger: %v", err)
+		subservice.el.Fatal(err)
 	}
 
-	l.Println("cringe")
-
-	el, err := logger.InitLogger("logs/error_log_file.txt")
+	l, err := logger.Init(logfilepath)
 	if err != nil {
-		log.Fatalf("failed to initialize error logger: %v", err)
+		log.Fatalf("failed to initialize application l: %v", err)
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		input := scanner.Text()
+	sc := bufio.NewScanner(os.Stdin)
+	for sc.Scan() {
+		input := sc.Text()
 
-		outputMessage, err := processMessage(input)
+		l.Printf("%v: Получено сообщение от клиента: %s", time.Now(), input)
+
+		outputmsg, err := InitOutputMessage(input)
 		if err != nil {
-			el.Printf("error: %v", err)
-			continue
+			time.Sleep(time.Second * time.Duration(cfg.Timeout))
+			fmt.Println(InvalidDataMessage)
+			break
 		}
 
-		fmt.Println(outputMessage)
+		time.Sleep(time.Second * time.Duration(cfg.Timeout))
+
+		fmt.Println(outputmsg)
+		l.Printf("%v: Отправлено сообщение клиенту: %s", time.Now(), outputmsg)
 	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "ошибка при чтении: ", err)
+
+	if err := sc.Err(); err != nil {
+		_, err := fmt.Fprintln(os.Stdout, "failed to read: ", err)
+		if err != nil {
+			log.Fatalf("failed to reading")
+		}
 	}
 }
 
-func processMessage(input string) (string, error) {
-	input = strings.TrimSpace(input)
-	bufferSlice := strings.Split(input, " ")
+func InitOutputMessage(clientMessage string) (string, error) {
+	clientMessage = strings.TrimSpace(clientMessage)
+	bufferSlice := strings.Split(clientMessage, " ")
 
 	if len(bufferSlice) > MaxMessageSize || len(bufferSlice) < MinMessageSize {
 		return "", fmt.Errorf("некорректная длина")
 	}
 
-	return InitOutputMessage(input), nil
-}
-
-func InitOutputMessage(clientMessage string) string {
 	messageSlice := strings.Split(clientMessage, " ")
 
 	result := ""
@@ -88,5 +114,23 @@ func InitOutputMessage(clientMessage string) string {
 	lastMessagePart := messageSlice[FullNameSize:]
 	result += strings.Join(lastMessagePart, " ")
 
-	return result
+	return result, nil
+}
+
+func (s *Subservice) InitConfig(cfgfilename string) (*Subconfig, error) {
+	file, err := os.Open(cfgfilename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open cfg file: %w\n", err)
+	}
+
+	cfg := new(Subconfig)
+
+	decoder := json.NewDecoder(file)
+
+	err = decoder.Decode(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("error occurred while data load: %w\n", err)
+	}
+
+	return cfg, nil
 }

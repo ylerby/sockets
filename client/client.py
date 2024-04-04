@@ -2,7 +2,7 @@ import time
 import json
 import socket
 
-MESSAGE: str = "Алиякбяров Марат Ансарович M30-310Б 21"
+MESSAGE: str = "Алиякбяров Марат Ансарович M30-310Б 21\n"
 BUFFER_SIZE: int = 256
 
 client: socket.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
@@ -26,12 +26,8 @@ except Exception as error:
 
 log_file.write(f"{time.ctime()} - успешное подключение - {address}:{port}\n")
 
-time.sleep(timeout)
-
 client.send(MESSAGE.encode())
 log_file.write(f"{time.ctime()} - отправлено сообщение - {MESSAGE}\n")
-
-time.sleep(timeout)
 
 response_message: str = client.recv(BUFFER_SIZE).decode("utf-8")
 log_file.write(f"{time.ctime()} - получен ответ от сервера - {response_message}\n")

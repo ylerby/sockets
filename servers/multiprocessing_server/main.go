@@ -1,28 +1,34 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"multiprocessing_server/logger"
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
 )
 
 const (
-	ConfigFileName = "config/config.json"
-	ServerProtocol = "tcp"
+	protocol    = "tcp"
+	connhandler = "./connection-handler"
 )
 
-type Application struct {
-	logger      *log.Logger
-	errorLogger *log.Logger
+type Service struct {
+	l   *log.Logger
+	el  *log.Logger
+	cfg *Config
 }
 
-func NewApplication() *Application {
-	return &Application{}
+func New() *Service {
+	return new(Service)
 }
 
 type Config struct {
@@ -33,51 +39,75 @@ type Config struct {
 	Timeout          int    `json:"timeout"`
 }
 
-func (a *Application) handleConnection(conn net.Conn, wg *sync.WaitGroup) {
+func (s *Service) handleConnection(conn net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer func(conn net.Conn) {
-		err := conn.Close()
+	defer conn.Close()
+
+	command := exec.Command(connhandler)
+	command.Stdin = conn
+	command.Stdout = conn
+	command.Stderr = os.Stderr
+
+	errCh := make(chan error, 1)
+	disconnectTicker := time.NewTicker(time.Second * 20 * time.Duration(s.cfg.Timeout))
+	defer disconnectTicker.Stop()
+
+	go func() {
+		err := command.Start()
 		if err != nil {
+			s.el.Printf("failed to start command: %v", err)
+			errCh <- err
 			return
 		}
-	}(conn)
 
-	cmd := exec.Command("./connection-handler")
-	cmd.Stdin = conn
-	cmd.Stdout = conn
-	cmd.Stderr = os.Stderr
+		err = command.Wait()
+		errCh <- err
+	}()
 
-	if err := cmd.Start(); err != nil {
-		a.errorLogger.Printf("ошибка при запуске процесса: %s", err)
-		return
-	}
-
-	if err := cmd.Wait(); err != nil {
-		a.errorLogger.Printf("ошибка в процессе обработки: %s", err)
+	select {
+	case <-disconnectTicker.C:
+		if command.Process != nil {
+			err := command.Process.Kill()
+			if err != nil {
+				s.el.Printf("failed to kill process: %v", err)
+				return
+			}
+		}
+	case err := <-errCh:
+		if err != nil {
+			s.el.Printf("command finished with error: %v", err)
+		}
 	}
 }
 
 func main() {
-	app := NewApplication()
+	cfgfilename := flag.String("cfgfilepath", "", "")
+	logfilepath := flag.String("logfilepath", "", "output log file path")
+	errlogfilepath := flag.String("errlogfilepath", "", "output error log file path")
+	flag.Parse()
 
-	config, err := app.InitConfig()
+	service := New()
+
+	var err error
+
+	service.cfg, err = service.InitConfig(*cfgfilename)
 	if err != nil {
-		app.errorLogger.Fatal(err)
+		service.el.Fatal(err)
 	}
 
-	app.logger, err = logger.InitLogger("logs/log_file.txt")
+	service.l, err = logger.Init(*logfilepath)
 	if err != nil {
-		log.Fatalf("failed to initialize application logger: %v", err)
+		log.Fatalf("failed to init service l: %v", err)
 	}
 
-	app.errorLogger, err = logger.InitLogger("logs/error_log_file.txt")
+	service.el, err = logger.Init(*errlogfilepath)
 	if err != nil {
-		log.Fatalf("failed to initialize error logger: %v", err)
+		log.Fatalf("failed to initialize error l: %v", err)
 	}
 
-	server, err := net.Listen(ServerProtocol, config.Address+":"+config.Port)
+	server, err := net.Listen(protocol, service.cfg.Address+":"+service.cfg.Port)
 	if err != nil {
-		app.errorLogger.Fatalf("ошибка при запуске сервера: %s", err)
+		service.el.Fatalf("failed to start server: %v", err)
 	}
 
 	defer func(server net.Listener) {
@@ -87,37 +117,56 @@ func main() {
 		}
 	}(server)
 
-	app.logger.Printf("сервер запущен на %s", config.Address+":"+config.Port)
+	service.l.Printf("%v: Сервер запущен: %s", time.Now(), service.cfg.Address+":"+service.cfg.Port)
 
-	var wg sync.WaitGroup
+	wg := new(sync.WaitGroup)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	go func() {
+		<-ctx.Done()
+		err := server.Close()
+		if err != nil {
+			return
+		}
+
+		os.Exit(0)
+	}()
 
 	for {
 		conn, err := server.Accept()
 		if err != nil {
-			app.errorLogger.Printf("ошибка при соединении: %s", err)
+			service.el.Printf("connection error: %v\n", err)
 			continue
 		}
+
+		service.l.Printf("%v: Клиент подключен", time.Now())
+
 		wg.Add(1)
-		go app.handleConnection(conn, &wg)
+		go func(wg *sync.WaitGroup) {
+			service.handleConnection(conn, wg)
+		}(wg)
+
 	}
 
 	wg.Wait()
 }
 
-func (a *Application) InitConfig() (*Config, error) {
-	file, err := os.Open(ConfigFileName)
+func (s *Service) InitConfig(cfgfilename string) (*Config, error) {
+	file, err := os.Open(cfgfilename)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка при открытии файла - %s\n", err)
+		return nil, fmt.Errorf("failed to open cfg file: %w\n", err)
 	}
 
-	currentServerConfig := &Config{}
+	cfg := new(Config)
 
 	decoder := json.NewDecoder(file)
 
-	err = decoder.Decode(currentServerConfig)
+	err = decoder.Decode(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка при десериализации - %s\n", err)
+		return nil, fmt.Errorf("error occurred while data load: %w\n", err)
 	}
 
-	return currentServerConfig, nil
+	return cfg, nil
 }
