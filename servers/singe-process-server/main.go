@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	LogFileName        = "log_file.txt"
-	ErrorLogFileName   = "error_log_file.txt"
-	ConfigFileName     = "config.json"
+	LogFileName        = "logs/log_file.txt"
+	ErrorLogFileName   = "logs/error_log_file.txt"
+	ConfigFileName     = "config/config.json"
 	ServerProtocol     = "tcp"
 	ServerWriter       = "Сервер написан - Алиякбяров М.А."
 	InvalidDataMessage = "некорректные данные"

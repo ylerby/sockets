@@ -41,7 +41,12 @@ type Config struct {
 
 func (s *Service) handleConnection(conn net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			log.Printf("failed to close connection: %v", err)
+		}
+	}(conn)
 
 	command := exec.Command(connhandler)
 	command.Stdin = conn
@@ -81,9 +86,9 @@ func (s *Service) handleConnection(conn net.Conn, wg *sync.WaitGroup) {
 }
 
 func main() {
-	cfgfilename := flag.String("cfgfilepath", "", "")
-	logfilepath := flag.String("logfilepath", "", "output log file path")
-	errlogfilepath := flag.String("errlogfilepath", "", "output error log file path")
+	cfgfilename := flag.String("cfgfilepath", "config/config.json", "")
+	logfilepath := flag.String("logfilepath", "logs/log_file.txt", "output log file path")
+	errlogfilepath := flag.String("errlogfilepath", "logs/error_log_file.txt", "output error log file path")
 	flag.Parse()
 
 	service := New()
