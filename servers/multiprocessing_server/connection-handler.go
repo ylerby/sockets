@@ -69,6 +69,9 @@ func main() {
 
 		fmt.Println(outputmsg)
 		l.Printf("%v: Отправлено сообщение клиенту: %s", time.Now(), outputmsg)
+
+		time.Sleep(time.Second * time.Duration(cfg.Timeout))
+		l.Printf("%s - Клиент отключен", time.Now())
 	}
 
 	if err := sc.Err(); err != nil {

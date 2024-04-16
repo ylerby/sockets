@@ -82,6 +82,10 @@ func (a *Application) handleConnection(conn net.Conn, timeout int) {
 	}
 
 	a.logger.Printf("%s - отправлено сообщение клиенту - %s\n", time.Now(), outputMessage)
+
+	time.Sleep(time.Second * time.Duration(timeout))
+
+	a.logger.Printf("%s - клиент отключен", time.Now())
 }
 
 func main() {
